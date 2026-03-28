@@ -1,0 +1,33 @@
+# macOS
+.DS_Store
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.venv/
+venv/
+project/backend/venv/
+
+# SQLite database artifacts
+project/backend/messages.db
+project/backend/*.db
+project/backend/*.db-journal
+project/backend/*.db-wal
+project/backend/*.db-shm
+
+# Node.js
+node_modules/
+project/bot/node_modules/
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+
+# WhatsApp local session/cache
+project/bot/.wwebjs_auth/
+project/bot/.wwebjs_cache/
+
+# Environment files
+.env
+.env.*
