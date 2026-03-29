@@ -10,4 +10,5 @@ class Message(Base):
     text = Column(String, nullable=False)
     sender = Column(String, nullable=False)
     group_id = Column(String, nullable=False)
+    group_name = Column(String, nullable=True)
     timestamp = Column(Integer, nullable=False)

@@ -57,6 +57,8 @@ conda run -n wa-data uvicorn app.main:app --reload
 Backend endpoint:
 
 - `POST http://localhost:8000/ingest`
+- `GET http://localhost:8000/messages`
+- `GET http://localhost:8000/` (live message dashboard)
 
 Expected payload:
 
@@ -65,6 +67,7 @@ Expected payload:
 	"text": "hello",
 	"sender": "user123",
 	"group_id": "group123",
+	"group_name": "My WhatsApp Group",
 	"timestamp": 1234567890
 }
 ```
@@ -77,6 +80,16 @@ Open a second terminal:
 cd project/bot
 node index.js
 ```
+
+### 3. Open the Dashboard
+
+In your browser, open:
+
+```bash
+http://127.0.0.1:8000/
+```
+
+The page polls every 2 seconds and shows all stored messages.
 
 ## End-to-End Test
 
@@ -95,4 +108,4 @@ sqlite3 project/backend/messages.db "SELECT id,text,sender,group_id,timestamp FR
 ## Notes
 
 - Bot ingests only group messages (`msg.from.includes('@g.us')`).
-- Stored fields are exactly: `text`, `sender`, `group_id`, `timestamp`.
+- Stored fields are: `text`, `sender`, `group_id`, `group_name`, `timestamp`.

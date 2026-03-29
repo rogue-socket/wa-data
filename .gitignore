@@ -11,6 +11,10 @@ venv/
 project/backend/venv/
 
 # SQLite database artifacts
+messages.db
+*.db-journal
+*.db-wal
+*.db-shm
 project/backend/messages.db
 project/backend/*.db
 project/backend/*.db-journal
