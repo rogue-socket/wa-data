@@ -42,6 +42,22 @@ cp user.env.example user.env
 
 Update values in `user.env` as needed for your machine.
 
+For the 2-day batch classifier, keep these keys present in `user.env` (you can fill API key and model later):
+
+```bash
+GEMINI_API_KEY=
+GEMINI_BATCH_ENABLED=true
+GEMINI_BATCH_DAYS=2
+GEMINI_BATCH_LIMIT=1200
+GEMINI_BATCH_CHUNK_SIZE=30
+GEMINI_BATCH_MODEL=gemini-2.0-flash-lite
+GEMINI_BATCH_MAX_OUTPUT_TOKENS=900
+GEMINI_BATCH_TIMEOUT_SECONDS=12
+GEMINI_BATCH_CATEGORY_VERSION=v1-gemini-batch-lite
+GEMINI_BATCH_INPUT_COST_PER_MTOKENS_USD=0
+GEMINI_BATCH_OUTPUT_COST_PER_MTOKENS_USD=0
+```
+
 ### 1. Backend Dependencies (conda env `wa-data`)
 
 ```bash
@@ -131,6 +147,18 @@ ENABLE_GEMINI_CLASSIFIER=false
 GEMINI_API_KEY=
 GEMINI_MODEL=gemini-2.0-flash-lite
 GEMINI_CONFIDENCE_THRESHOLD=0.62
+
+# Optional 2-day Gemini batch re-classifier
+GEMINI_BATCH_ENABLED=true
+GEMINI_BATCH_DAYS=2
+GEMINI_BATCH_LIMIT=1200
+GEMINI_BATCH_CHUNK_SIZE=30
+GEMINI_BATCH_MODEL=gemini-2.0-flash-lite
+GEMINI_BATCH_MAX_OUTPUT_TOKENS=900
+GEMINI_BATCH_TIMEOUT_SECONDS=12
+GEMINI_BATCH_CATEGORY_VERSION=v1-gemini-batch-lite
+GEMINI_BATCH_INPUT_COST_PER_MTOKENS_USD=0
+GEMINI_BATCH_OUTPUT_COST_PER_MTOKENS_USD=0
 ```
 
 You can export variables from `user.env` before running services:
@@ -203,6 +231,73 @@ sqlite3 project/backend/messages.db "SELECT id,text,sender,group_id,timestamp FR
 - Dynamic proposals (`GET /categories/proposals`):
 	- low-confidence/fallback messages can propose new categories over time
 	- approve/reject with `POST /categories/proposals/{id}/review`
+- Batch classifier endpoints:
+	- `GET /categories/batch-config`
+	- `POST /categories/batch-classify`
+
+## 2-Day Gemini Batch Re-Classifier
+
+For consistent category refresh with low cost, run a batch recategorization every 2 days.
+
+Classifier spec files:
+
+- `project/backend/classifier/taxonomy.jsonl` (compact taxonomy with short category codes)
+- `project/backend/classifier/prompt_skeleton.txt` (strict JSON output prompt skeleton)
+
+Run manually:
+
+```bash
+cd project/backend
+set -a
+source ../../user.env
+set +a
+conda run -n wa-data python -m app.batch_classifier --days 2 --limit 1200 --chunk-size 30
+```
+
+Dry-run (no DB writes):
+
+```bash
+cd project/backend
+set -a
+source ../../user.env
+set +a
+conda run -n wa-data python -m app.batch_classifier --days 2 --limit 1200 --chunk-size 30 --dry-run
+```
+
+Run from API (manual trigger, no cron needed):
+
+```bash
+curl -X POST http://127.0.0.1:8000/categories/batch-classify \
+	-H "Content-Type: application/json" \
+	-d '{
+		"days": 2,
+		"limit": 200,
+		"chunk_size": 25,
+		"dry_run": true,
+		"only_with_urls": true
+	}'
+```
+
+The response includes token estimates and an optional USD estimate if pricing env keys are set.
+
+Cron setup example (every 2 days):
+
+```bash
+crontab -e
+```
+
+Add this line:
+
+```cron
+10 2 */2 * * cd /Users/yashagrawal/Documents/wa-data/project/backend && /Users/yashagrawal/Documents/wa-data/project/backend/scripts/run_batch_classifier.sh --days 2 --limit 1200 --chunk-size 30 >> /Users/yashagrawal/Documents/wa-data/project/backend/batch_classifier.log 2>&1
+```
+
+Notes:
+
+- `*/2` on day-of-month runs roughly 3 to 4 times per week.
+- Keep model at `gemini-2.0-flash-lite` for cheapest routine classification.
+- Batch job prints token estimates (`estimated_input_tokens`, `estimated_output_tokens`, `estimated_total_tokens`) for budget tracking.
+- Low-token strategy: compact taxonomy codes, truncated message text, URL cap, strict JSON schema, temperature 0.
 
 Roadmap TODOs for ranking, searchable index, and aggregation are tracked in `project/backend/TODO_ENRICHMENT.md`.
 

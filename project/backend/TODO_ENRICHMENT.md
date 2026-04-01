@@ -17,6 +17,7 @@
 - [x] Implement rule-first category classification on ingest.
 - [x] Add optional low-cost Gemini fallback for low-confidence classification.
 - [x] Add dynamic category proposal table and review endpoints.
+- [x] Add 2-day Gemini batch re-classifier infra (taxonomy spec, prompt skeleton, cron-ready runner).
 - [ ] Add promotion flow to auto-wire approved proposals into classifier rules.
 
 ## Ranking Model

@@ -27,6 +27,7 @@ This is the top-level TODO index for easy navigation.
 
 - [x] Add working agreement and coding standards
 - [x] Add user.env setup and update guidance to README
+- [x] Add 2-day Gemini batch classifier setup and cron example
 - [ ] Add API examples for category-focused retrieval and digest output
 
 ### Repository Hygiene
