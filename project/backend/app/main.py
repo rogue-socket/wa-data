@@ -6,6 +6,7 @@ import time
 from collections import Counter
 from difflib import SequenceMatcher
 from pathlib import Path
+from types import SimpleNamespace
 from urllib import error as urlerror
 from urllib import parse as urlparse
 from urllib import request as urlrequest
@@ -14,11 +15,12 @@ from typing import Any, Literal, Optional
 from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import text
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
+from . import batch_classifier
 from .database import Base, SessionLocal, engine
 from .models import CategoryProposal, Message, OutgoingMessage, ReactionEvent
 
@@ -891,6 +893,20 @@ class CategoryProposalReviewIn(BaseModel):
     status: Literal["approved", "rejected"]
 
 
+class BatchClassifierRunIn(BaseModel):
+    days: int = Field(default=2, ge=1, le=14)
+    limit: int = Field(default=1200, ge=1, le=5000)
+    chunk_size: int = Field(default=30, ge=1, le=120)
+    model: Optional[str] = None
+    taxonomy_path: Optional[str] = None
+    prompt_path: Optional[str] = None
+    max_output_tokens: Optional[int] = Field(default=None, ge=64, le=4096)
+    timeout_seconds: Optional[int] = Field(default=None, ge=5, le=60)
+    category_version: Optional[str] = None
+    dry_run: bool = True
+    only_with_urls: bool = True
+
+
 def get_db():
     db = SessionLocal()
     try:
@@ -1260,6 +1276,59 @@ def list_categories():
             "model": os.getenv("GEMINI_MODEL", "gemini-2.0-flash-lite"),
         },
     }
+
+
+@app.get("/categories/batch-config")
+def get_batch_classifier_config():
+    return {
+        "enabled": os.getenv("GEMINI_BATCH_ENABLED", "true").strip().lower() == "true",
+        "days": int(os.getenv("GEMINI_BATCH_DAYS", "2")),
+        "limit": int(os.getenv("GEMINI_BATCH_LIMIT", "1200")),
+        "chunk_size": int(os.getenv("GEMINI_BATCH_CHUNK_SIZE", "30")),
+        "model": os.getenv("GEMINI_BATCH_MODEL") or os.getenv("GEMINI_MODEL") or "gemini-2.0-flash-lite",
+        "taxonomy_path": os.getenv("GEMINI_BATCH_TAXONOMY_PATH") or str(batch_classifier.DEFAULT_TAXONOMY_PATH),
+        "prompt_path": os.getenv("GEMINI_BATCH_PROMPT_PATH") or str(batch_classifier.DEFAULT_PROMPT_PATH),
+        "max_output_tokens": int(os.getenv("GEMINI_BATCH_MAX_OUTPUT_TOKENS", "900")),
+        "timeout_seconds": int(os.getenv("GEMINI_BATCH_TIMEOUT_SECONDS", "12")),
+        "category_version": os.getenv("GEMINI_BATCH_CATEGORY_VERSION", "v1-gemini-batch-lite"),
+        "has_api_key": bool(os.getenv("GEMINI_API_KEY")),
+    }
+
+
+@app.post("/categories/batch-classify")
+def run_batch_classifier(payload: BatchClassifierRunIn):
+    if os.getenv("GEMINI_BATCH_ENABLED", "true").strip().lower() != "true":
+        raise HTTPException(status_code=400, detail="batch classifier is disabled (set GEMINI_BATCH_ENABLED=true)")
+    if not os.getenv("GEMINI_API_KEY"):
+        raise HTTPException(status_code=400, detail="GEMINI_API_KEY is required")
+
+    args = SimpleNamespace(
+        days=payload.days,
+        limit=payload.limit,
+        chunk_size=payload.chunk_size,
+        model=payload.model or os.getenv("GEMINI_BATCH_MODEL") or os.getenv("GEMINI_MODEL") or "gemini-2.0-flash-lite",
+        taxonomy_path=payload.taxonomy_path
+        or os.getenv("GEMINI_BATCH_TAXONOMY_PATH")
+        or str(batch_classifier.DEFAULT_TAXONOMY_PATH),
+        prompt_path=payload.prompt_path
+        or os.getenv("GEMINI_BATCH_PROMPT_PATH")
+        or str(batch_classifier.DEFAULT_PROMPT_PATH),
+        max_output_tokens=payload.max_output_tokens
+        if payload.max_output_tokens is not None
+        else int(os.getenv("GEMINI_BATCH_MAX_OUTPUT_TOKENS", "900")),
+        timeout_seconds=payload.timeout_seconds
+        if payload.timeout_seconds is not None
+        else int(os.getenv("GEMINI_BATCH_TIMEOUT_SECONDS", "12")),
+        category_version=payload.category_version
+        or os.getenv("GEMINI_BATCH_CATEGORY_VERSION", "v1-gemini-batch-lite"),
+        dry_run=payload.dry_run,
+        only_with_urls=payload.only_with_urls,
+    )
+
+    try:
+        return batch_classifier.run_job(args)
+    except (RuntimeError, FileNotFoundError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @app.get("/categories/proposals")

@@ -1,0 +1,9 @@
+Classify each item into exactly one taxonomy code.
+Rules:
+- Output strict JSON only.
+- Schema: {"labels":[{"id":123,"c":"code","conf":0.0,"t":["tag-1","tag-2"]}]}
+- c must be one taxonomy code.
+- conf must be 0.0 to 1.0.
+- Keep t short, lowercase slug style, max 2 tags.
+- If uncertain, use code facts.
+Data follows as compact JSON:

@@ -1,0 +1,2 @@
+# Run every 2 days at 02:10 local time (~3-4 times per week)
+10 2 */2 * * cd /Users/yashagrawal/Documents/wa-data/project/backend && /Users/yashagrawal/Documents/wa-data/project/backend/scripts/run_batch_classifier.sh --days 2 --limit 1200 --chunk-size 30 >> /Users/yashagrawal/Documents/wa-data/project/backend/batch_classifier.log 2>&1

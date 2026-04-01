@@ -1,0 +1,10 @@
+{"code":"opp","category":"opportunities","hint":"jobs internships hiring referrals"}
+{"code":"fund","category":"startup-funding-news","hint":"funding rounds valuation vc mna"}
+{"code":"evt","category":"events-hackathons-meetups","hint":"event meetup hackathon register deadline"}
+{"code":"learn","category":"learning-and-research","hint":"course tutorial guide paper arxiv"}
+{"code":"oss","category":"open-source-and-repos","hint":"github repo open-source code release"}
+{"code":"tool","category":"tools-and-libraries","hint":"tool library sdk package api"}
+{"code":"launch","category":"product-launches","hint":"launched beta waitlist ship product"}
+{"code":"news","category":"articles-and-industry-news","hint":"article thread newsletter industry updates"}
+{"code":"aiml","category":"ai-ml","hint":"ai ml llm agents rag models"}
+{"code":"facts","category":"facts-and-insights","hint":"general insight uncategorized fallback"}
