@@ -69,6 +69,7 @@ Backend endpoint:
 - `POST http://localhost:8000/ingest`
 - `GET http://localhost:8000/messages`
 - `GET http://localhost:8000/messages/merged`
+- `GET http://localhost:8000/search`
 - `POST http://localhost:8000/bot/send`
 - `GET http://localhost:8000/bot/commands/next`
 - `POST http://localhost:8000/bot/commands/{id}/result`
@@ -167,6 +168,13 @@ sqlite3 project/backend/messages.db "SELECT id,text,sender,group_id,timestamp FR
 	- `group_id`
 	- `group_name` (partial match)
 	- `sort_by` in `newest|oldest|rank|duplicates`
+	- `limit`, `offset`
+- Full-text search support for `GET /search`:
+	- `q` (query string, required)
+	- `group_id`
+	- `group_name` (partial match)
+	- `sort_by` in `relevance|newest|oldest|rank|duplicates`
+	- `merged` (`true|false`) to return one representative per duplicate cluster
 	- `limit`, `offset`
 
 Roadmap TODOs for ranking, searchable index, and aggregation are tracked in `project/backend/TODO_ENRICHMENT.md`.

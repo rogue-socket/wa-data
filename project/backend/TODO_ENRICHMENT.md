@@ -22,10 +22,10 @@
 
 ## Searchable Index
 
-- [ ] Add SQLite FTS5 table for message text and selected metadata fields.
-- [ ] Add synchronization path from ingest updates to FTS index.
-- [ ] Add `/search` endpoint with group filters, sorting, and pagination.
-- [ ] Add merged-cluster search mode to reduce duplicate noise.
+- [x] Add SQLite FTS5 table for message text and selected metadata fields.
+- [x] Add synchronization path from ingest updates to FTS index.
+- [x] Add `/search` endpoint with group filters, sorting, and pagination.
+- [x] Add merged-cluster search mode to reduce duplicate noise.
 - [ ] Add query analytics table for search relevance tuning.
 
 ## Aggregation

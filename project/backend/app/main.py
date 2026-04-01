@@ -11,6 +11,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from sqlalchemy import text
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
 from .database import Base, SessionLocal, engine
@@ -69,6 +70,7 @@ URL_PATTERN = re.compile(r"https?://\S+", re.IGNORECASE)
 MENTION_PATTERN = re.compile(r"@\w+")
 HASHTAG_PATTERN = re.compile(r"#\w+")
 WHITESPACE_PATTERN = re.compile(r"\s+")
+SEARCH_TOKEN_PATTERN = re.compile(r"[\\w@#:/.\\-]+")
 
 
 def normalize_text(value: str) -> str:
@@ -206,7 +208,137 @@ def load_metadata(value: Optional[str]) -> dict[str, Any]:
         return {}
 
 
+def build_metadata_terms(metadata: dict[str, Any]) -> str:
+    terms: list[str] = []
+
+    language = metadata.get("language")
+    if isinstance(language, str) and language:
+        terms.append(language)
+
+    for key in ("urls", "mentions", "hashtags"):
+        values = metadata.get(key, [])
+        if not isinstance(values, list):
+            continue
+        for value in values:
+            if isinstance(value, str) and value:
+                terms.append(value)
+
+    bot_metadata = metadata.get("bot_metadata")
+    if isinstance(bot_metadata, dict):
+        bot_type = bot_metadata.get("type")
+        if isinstance(bot_type, str) and bot_type:
+            terms.append(bot_type)
+
+        mentioned_ids = bot_metadata.get("mentioned_ids", [])
+        if isinstance(mentioned_ids, list):
+            for mentioned in mentioned_ids:
+                if isinstance(mentioned, str) and mentioned:
+                    terms.append(mentioned)
+
+    return " ".join(terms)
+
+
+def sync_message_to_fts(db: Session, row: Message) -> None:
+    metadata_terms = build_metadata_terms(load_metadata(row.metadata_json))
+    db.execute(
+        text(
+            """
+            INSERT OR REPLACE INTO messages_fts (
+                rowid,
+                message_id,
+                group_id,
+                group_name,
+                sender,
+                text,
+                normalized_text,
+                metadata_terms
+            ) VALUES (
+                :rowid,
+                :message_id,
+                :group_id,
+                :group_name,
+                :sender,
+                :text,
+                :normalized_text,
+                :metadata_terms
+            )
+            """
+        ),
+        {
+            "rowid": row.id,
+            "message_id": row.id,
+            "group_id": row.group_id,
+            "group_name": row.group_name or "",
+            "sender": row.sender,
+            "text": row.text,
+            "normalized_text": row.normalized_text or "",
+            "metadata_terms": metadata_terms,
+        },
+    )
+
+
+def ensure_search_schema() -> None:
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                """
+                CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(
+                    message_id UNINDEXED,
+                    group_id UNINDEXED,
+                    group_name,
+                    sender,
+                    text,
+                    normalized_text,
+                    metadata_terms
+                )
+                """
+            )
+        )
+
+        # Backfill existing messages so search works for already ingested data.
+        connection.execute(
+            text(
+                """
+                INSERT INTO messages_fts (
+                    rowid,
+                    message_id,
+                    group_id,
+                    group_name,
+                    sender,
+                    text,
+                    normalized_text,
+                    metadata_terms
+                )
+                SELECT
+                    m.id,
+                    m.id,
+                    m.group_id,
+                    COALESCE(m.group_name, ''),
+                    m.sender,
+                    m.text,
+                    COALESCE(m.normalized_text, ''),
+                    COALESCE(m.metadata_json, '')
+                FROM messages m
+                WHERE NOT EXISTS (
+                    SELECT 1 FROM messages_fts f
+                    WHERE f.rowid = m.id
+                )
+                """
+            )
+        )
+
+
+def build_fts_match_query(raw_query: str) -> str:
+    tokens = [token for token in SEARCH_TOKEN_PATTERN.findall((raw_query or "").strip()) if token]
+    if not tokens:
+        raise HTTPException(status_code=400, detail="query must contain searchable terms")
+
+    limited_tokens = tokens[:20]
+    return " AND ".join(f'"{token}"' for token in limited_tokens)
+
+
 ensure_messages_schema()
+ensure_search_schema()
 
 app = FastAPI()
 
@@ -373,6 +505,193 @@ def list_merged_messages(
     }
 
 
+@app.get("/search")
+def search_messages(
+    q: str = Query(min_length=1),
+    group_id: Optional[str] = Query(default=None),
+    group_name: Optional[str] = Query(default=None),
+    sort_by: Literal["relevance", "newest", "oldest", "rank", "duplicates"] = Query(default="relevance"),
+    merged: bool = Query(default=False),
+    limit: int = Query(default=50, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+    db: Session = Depends(get_db),
+):
+    match_query = build_fts_match_query(q)
+    group_name_like = f"%{group_name}%" if group_name else None
+    where_clause = """
+        messages_fts MATCH :match_query
+        AND (:group_id IS NULL OR m.group_id = :group_id)
+        AND (:group_name_like IS NULL OR m.group_name LIKE :group_name_like)
+    """
+
+    params = {
+        "match_query": match_query,
+        "group_id": group_id,
+        "group_name_like": group_name_like,
+        "limit": limit,
+        "offset": offset,
+    }
+
+    if merged:
+        cluster_pick_order_map = {
+            "relevance": "h.fts_rank ASC, h.id DESC",
+            "newest": "h.timestamp DESC, h.id DESC",
+            "oldest": "h.timestamp ASC, h.id ASC",
+            "rank": "h.rank_score DESC, h.id DESC",
+            "duplicates": "h.duplicate_count DESC, h.id DESC",
+        }
+        cluster_sort_order_map = {
+            "relevance": "fts_rank ASC, latest_timestamp DESC",
+            "newest": "latest_timestamp DESC",
+            "oldest": "latest_timestamp ASC",
+            "rank": "rank_score DESC, latest_timestamp DESC",
+            "duplicates": "duplicate_count DESC, rank_score DESC, latest_timestamp DESC",
+        }
+
+        cluster_pick_order = cluster_pick_order_map.get(sort_by, cluster_pick_order_map["relevance"])
+        cluster_sort_order = cluster_sort_order_map.get(sort_by, cluster_sort_order_map["relevance"])
+
+        count_sql = text(
+            f"""
+            WITH search_hits AS (
+                SELECT
+                    m.id,
+                    COALESCE(m.duplicate_group_key, 'single-' || m.id) AS cluster_key
+                FROM messages_fts
+                JOIN messages m ON m.id = messages_fts.rowid
+                WHERE {where_clause}
+            )
+            SELECT COUNT(DISTINCT cluster_key) AS total
+            FROM search_hits
+            """
+        )
+
+        select_sql = text(
+            f"""
+            WITH search_hits AS (
+                SELECT
+                    m.id,
+                    m.text,
+                    m.normalized_text,
+                    m.sender,
+                    m.group_id,
+                    m.group_name,
+                    m.wa_message_id,
+                    m.timestamp,
+                    m.metadata_json,
+                    m.duplicate_group_key,
+                    m.similarity_to_canonical,
+                    m.duplicate_count,
+                    m.reaction_score,
+                    m.rank_score,
+                    bm25(messages_fts) AS fts_rank,
+                    COALESCE(m.duplicate_group_key, 'single-' || m.id) AS cluster_key
+                FROM messages_fts
+                JOIN messages m ON m.id = messages_fts.rowid
+                WHERE {where_clause}
+            ),
+            clustered AS (
+                SELECT
+                    h.*,
+                    MAX(h.timestamp) OVER (PARTITION BY h.cluster_key) AS latest_timestamp,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY h.cluster_key
+                        ORDER BY {cluster_pick_order}
+                    ) AS cluster_row_num
+                FROM search_hits h
+            )
+            SELECT *
+            FROM clustered
+            WHERE cluster_row_num = 1
+            ORDER BY {cluster_sort_order}
+            LIMIT :limit OFFSET :offset
+            """
+        )
+    else:
+        sort_order_map = {
+            "relevance": "fts_rank ASC, m.id DESC",
+            "newest": "m.timestamp DESC, m.id DESC",
+            "oldest": "m.timestamp ASC, m.id ASC",
+            "rank": "m.rank_score DESC, m.id DESC",
+            "duplicates": "m.duplicate_count DESC, m.id DESC",
+        }
+        sort_order = sort_order_map.get(sort_by, sort_order_map["relevance"])
+
+        count_sql = text(
+            f"""
+            SELECT COUNT(1) AS total
+            FROM messages_fts
+            JOIN messages m ON m.id = messages_fts.rowid
+            WHERE {where_clause}
+            """
+        )
+
+        select_sql = text(
+            f"""
+            SELECT
+                m.id,
+                m.text,
+                m.normalized_text,
+                m.sender,
+                m.group_id,
+                m.group_name,
+                m.wa_message_id,
+                m.timestamp,
+                m.metadata_json,
+                m.duplicate_group_key,
+                m.similarity_to_canonical,
+                m.duplicate_count,
+                m.reaction_score,
+                m.rank_score,
+                bm25(messages_fts) AS fts_rank,
+                m.timestamp AS latest_timestamp
+            FROM messages_fts
+            JOIN messages m ON m.id = messages_fts.rowid
+            WHERE {where_clause}
+            ORDER BY {sort_order}
+            LIMIT :limit OFFSET :offset
+            """
+        )
+
+    try:
+        total = db.execute(count_sql, params).scalar() or 0
+        rows = db.execute(select_sql, params).mappings().all()
+    except OperationalError as exc:
+        raise HTTPException(status_code=400, detail="invalid search query syntax") from exc
+
+    items = [
+        {
+            "id": row["id"],
+            "text": row["text"],
+            "normalized_text": row["normalized_text"],
+            "sender": row["sender"],
+            "group_id": row["group_id"],
+            "group_name": row["group_name"],
+            "wa_message_id": row["wa_message_id"],
+            "timestamp": row["timestamp"],
+            "metadata": load_metadata(row["metadata_json"]),
+            "duplicate_group_key": row["duplicate_group_key"],
+            "similarity_to_canonical": row["similarity_to_canonical"],
+            "duplicate_count": row["duplicate_count"],
+            "reaction_score": row["reaction_score"],
+            "rank_score": row["rank_score"],
+            "search_rank": row["fts_rank"],
+            "latest_timestamp": row["latest_timestamp"],
+        }
+        for row in rows
+    ]
+
+    return {
+        "query": q,
+        "sort_by": sort_by,
+        "merged": merged,
+        "total": total,
+        "offset": offset,
+        "limit": limit,
+        "items": items,
+    }
+
+
 @app.post("/ingest")
 def ingest(message: MessageIn, db: Session = Depends(get_db)):
     metadata = extract_metadata(message.text, incoming_metadata=message.metadata)
@@ -405,6 +724,7 @@ def ingest(message: MessageIn, db: Session = Depends(get_db)):
     )
     db.add(db_message)
     db.flush()
+    sync_message_to_fts(db, db_message)
 
     duplicate_count = recalculate_cluster_scores(
         db,

@@ -11,7 +11,7 @@ This is the top-level TODO index for easy navigation.
 ## Active Priorities
 
 - [~] Backend enrichment, ranking, and filtering hardening
-- [ ] Search index (SQLite FTS5) implementation
+- [~] Search index (SQLite FTS5) implementation
 - [ ] Aggregation endpoints for trends and summaries
 - [ ] Bot reliability and command observability improvements
 
