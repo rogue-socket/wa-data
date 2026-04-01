@@ -71,26 +71,32 @@ This document defines default engineering practices for this repository.
 
 ## 8) Product Taxonomy (V1)
 
-Messages can be multi-label and should prefer intent over format.
+Messages should use one primary category plus zero or more tags. Prefer intent over source format.
 
 Primary categories:
-- jobs
-- article-news
-- learning-resource
-- startup-product
-- event
-- social-thread
-- media-image-video
-- general-chat
-- misc
+- opportunities
+- startup-funding-news
+- events-hackathons-meetups
+- learning-and-research
+- open-source-and-repos
+- tools-and-libraries
+- product-launches
+- articles-and-industry-news
+- ai-ml
+- facts-and-insights
 
 Supporting tags:
-- ai
+- source-twitter
+- source-github
+- source-youtube
 - funding
 - internship
-- urgent
 - referral
 - hackathon
+
+Dynamic taxonomy:
+- New category proposals are generated from repeated low-confidence/fallback content.
+- Proposals require explicit review approval before becoming active categories.
 
 ## 9) Definition of Done
 

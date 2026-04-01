@@ -70,6 +70,9 @@ Backend endpoint:
 - `GET http://localhost:8000/messages`
 - `GET http://localhost:8000/messages/merged`
 - `GET http://localhost:8000/search`
+- `GET http://localhost:8000/categories`
+- `GET http://localhost:8000/categories/proposals`
+- `POST http://localhost:8000/categories/proposals/{id}/review`
 - `POST http://localhost:8000/bot/send`
 - `GET http://localhost:8000/bot/commands/next`
 - `POST http://localhost:8000/bot/commands/{id}/result`
@@ -103,6 +106,7 @@ Enriched payload fields supported:
 ```
 
 Messages are now enriched on ingest with metadata extraction, dedupe grouping (similarity threshold `>= 0.80` within the same group), and a deterministic `rank_score`.
+Messages are also classified with a rule-first category model, with optional Gemini fallback for low-confidence messages.
 
 ### 2. Start Bot
 
@@ -121,6 +125,12 @@ BACKEND_REACTIONS_URL=http://127.0.0.1:8000/reactions/ingest
 BACKEND_COMMAND_NEXT_URL=http://127.0.0.1:8000/bot/commands/next
 BACKEND_COMMAND_RESULT_URL=http://127.0.0.1:8000/bot/commands
 COMMAND_POLL_INTERVAL_MS=3000
+
+# Optional low-cost Gemini fallback for classification
+ENABLE_GEMINI_CLASSIFIER=false
+GEMINI_API_KEY=
+GEMINI_MODEL=gemini-2.0-flash-lite
+GEMINI_CONFIDENCE_THRESHOLD=0.62
 ```
 
 You can export variables from `user.env` before running services:
@@ -167,15 +177,32 @@ sqlite3 project/backend/messages.db "SELECT id,text,sender,group_id,timestamp FR
 - Filter and sorting support for `GET /messages`:
 	- `group_id`
 	- `group_name` (partial match)
+	- `category`
+	- `source_platform`
 	- `sort_by` in `newest|oldest|rank|duplicates`
 	- `limit`, `offset`
 - Full-text search support for `GET /search`:
 	- `q` (query string, required)
 	- `group_id`
 	- `group_name` (partial match)
+	- `category`
 	- `sort_by` in `relevance|newest|oldest|rank|duplicates`
 	- `merged` (`true|false`) to return one representative per duplicate cluster
 	- `limit`, `offset`
+- Primary categories (`GET /categories`):
+	- opportunities
+	- startup-funding-news
+	- events-hackathons-meetups
+	- learning-and-research
+	- open-source-and-repos
+	- tools-and-libraries
+	- product-launches
+	- articles-and-industry-news
+	- ai-ml
+	- facts-and-insights
+- Dynamic proposals (`GET /categories/proposals`):
+	- low-confidence/fallback messages can propose new categories over time
+	- approve/reject with `POST /categories/proposals/{id}/review`
 
 Roadmap TODOs for ranking, searchable index, and aggregation are tracked in `project/backend/TODO_ENRICHMENT.md`.
 

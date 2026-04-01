@@ -205,6 +205,19 @@
       <div class="controls">
         <input id="groupIdFilter" placeholder="Filter by group_id" />
         <input id="groupNameFilter" placeholder="Filter by group name" />
+        <select id="categoryFilter">
+          <option value="">Category: all</option>
+          <option value="opportunities">opportunities</option>
+          <option value="startup-funding-news">startup-funding-news</option>
+          <option value="events-hackathons-meetups">events-hackathons-meetups</option>
+          <option value="learning-and-research">learning-and-research</option>
+          <option value="open-source-and-repos">open-source-and-repos</option>
+          <option value="tools-and-libraries">tools-and-libraries</option>
+          <option value="product-launches">product-launches</option>
+          <option value="articles-and-industry-news">articles-and-industry-news</option>
+          <option value="ai-ml">ai-ml</option>
+          <option value="facts-and-insights">facts-and-insights</option>
+        </select>
         <select id="sortByFilter">
           <option value="newest">Sort: newest</option>
           <option value="oldest">Sort: oldest</option>
@@ -224,6 +237,7 @@
             <th>Time</th>
             <th>Sender</th>
             <th>Group</th>
+            <th>Category</th>
             <th>Message</th>
           </tr>
         </thead>
@@ -240,6 +254,7 @@
     const updatedEl = document.getElementById('updated');
     const groupIdFilterEl = document.getElementById('groupIdFilter');
     const groupNameFilterEl = document.getElementById('groupNameFilter');
+    const categoryFilterEl = document.getElementById('categoryFilter');
     const sortByFilterEl = document.getElementById('sortByFilter');
     const applyFiltersEl = document.getElementById('applyFilters');
     const clearFiltersEl = document.getElementById('clearFilters');
@@ -248,6 +263,7 @@
     let activeFilters = {
       group_id: '',
       group_name: '',
+      category: '',
       sort_by: 'newest',
     };
 
@@ -294,6 +310,7 @@
         tr.appendChild(cell(String(message.sender || ''), 'mono'));
         const groupLabel = message.group_name || message.group_id || '';
         tr.appendChild(cell(String(groupLabel), 'mono'));
+        tr.appendChild(cell(String(message.category || ''), 'mono'));
         tr.appendChild(cell(String(message.text || ''), 'msg'));
         rowsEl.appendChild(tr);
       }
@@ -308,6 +325,9 @@
       }
       if (activeFilters.group_name) {
         params.set('group_name', activeFilters.group_name);
+      }
+      if (activeFilters.category) {
+        params.set('category', activeFilters.category);
       }
       if (activeFilters.sort_by) {
         params.set('sort_by', activeFilters.sort_by);
@@ -338,6 +358,7 @@
       activeFilters = {
         group_id: groupIdFilterEl.value.trim(),
         group_name: groupNameFilterEl.value.trim(),
+        category: categoryFilterEl.value,
         sort_by: sortByFilterEl.value,
       };
       loadMessages();
@@ -346,10 +367,12 @@
     clearFiltersEl.addEventListener('click', () => {
       groupIdFilterEl.value = '';
       groupNameFilterEl.value = '';
+      categoryFilterEl.value = '';
       sortByFilterEl.value = 'newest';
       activeFilters = {
         group_id: '',
         group_name: '',
+        category: '',
         sort_by: 'newest',
       };
       loadMessages();

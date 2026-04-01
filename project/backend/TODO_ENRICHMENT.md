@@ -5,9 +5,19 @@
 - [x] Extract deterministic metadata at ingest time: URLs, mentions, hashtags, token count, language heuristic.
 - [x] Store metadata in `messages.metadata_json`.
 - [x] Persist metadata flags in columns (`has_url`, `has_mention`, `has_hashtag`).
+- [x] Add source extraction fields (`source_platform`, `source_domain`).
 - [ ] Add stronger language detection using dedicated package (langdetect or fasttext).
 - [ ] Add extraction for attachment metadata and quoted/reply context.
 - [ ] Add metadata quality score for ranking explainability.
+
+## Taxonomy and Classification
+
+- [x] Add primary category fields to messages (`category`, `category_confidence`, `category_version`).
+- [x] Add tags field (`tags_json`) for dynamic topic labels.
+- [x] Implement rule-first category classification on ingest.
+- [x] Add optional low-cost Gemini fallback for low-confidence classification.
+- [x] Add dynamic category proposal table and review endpoints.
+- [ ] Add promotion flow to auto-wire approved proposals into classifier rules.
 
 ## Ranking Model
 

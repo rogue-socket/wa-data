@@ -12,6 +12,7 @@ This is the top-level TODO index for easy navigation.
 
 - [~] Backend enrichment, ranking, and filtering hardening
 - [~] Search index (SQLite FTS5) implementation
+- [~] Dynamic message taxonomy and category proposals
 - [ ] Aggregation endpoints for trends and summaries
 - [ ] Bot reliability and command observability improvements
 
