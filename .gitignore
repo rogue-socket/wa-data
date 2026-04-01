@@ -20,6 +20,8 @@ project/backend/*.db
 project/backend/*.db-journal
 project/backend/*.db-wal
 project/backend/*.db-shm
+project/backend/batch_classifier.log
+project/backend/batch_classifier.log.*
 
 # Node.js
 node_modules/
