@@ -35,3 +35,5 @@ project/bot/.wwebjs_cache/
 # Environment files
 .env
 .env.*
+user.env
+project/**/user.env

@@ -32,6 +32,16 @@ project/
 
 ## Setup
 
+### 0. Create Local Config File (`user.env`)
+
+This repo uses a local `user.env` file for environment configuration.
+
+```bash
+cp user.env.example user.env
+```
+
+Update values in `user.env` as needed for your machine.
+
 ### 1. Backend Dependencies (conda env `wa-data`)
 
 ```bash
@@ -112,6 +122,14 @@ BACKEND_COMMAND_RESULT_URL=http://127.0.0.1:8000/bot/commands
 COMMAND_POLL_INTERVAL_MS=3000
 ```
 
+You can export variables from `user.env` before running services:
+
+```bash
+set -a
+source user.env
+set +a
+```
+
 ### 3. Open the Dashboard
 
 In your browser, open:
@@ -152,3 +170,9 @@ sqlite3 project/backend/messages.db "SELECT id,text,sender,group_id,timestamp FR
 	- `limit`, `offset`
 
 Roadmap TODOs for ranking, searchable index, and aggregation are tracked in `project/backend/TODO_ENRICHMENT.md`.
+
+## Engineering Workflow
+
+- Repository working practices are defined in `WORKING_AGREEMENT.md`.
+- Top-level categorized TODO navigation is in `TODO_MASTER.md`.
+- Keep README updated whenever setup, env variables, or run flows change.
