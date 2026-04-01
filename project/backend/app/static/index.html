@@ -54,6 +54,32 @@
       gap: 14px;
     }
 
+    .controls {
+      width: 100%;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 4px;
+    }
+
+    .controls input,
+    .controls select,
+    .controls button {
+      border: 1px solid var(--line);
+      background: #fffdf7;
+      color: var(--ink);
+      border-radius: 10px;
+      padding: 8px 10px;
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 0.82rem;
+    }
+
+    .controls button {
+      cursor: pointer;
+      font-weight: 500;
+      background: #e0f2fe;
+    }
+
     .title {
       margin: 0;
       font-size: 1.35rem;
@@ -176,6 +202,18 @@
         <span id="count">Messages: 0</span>
         <span id="updated">Updated: -</span>
       </p>
+      <div class="controls">
+        <input id="groupIdFilter" placeholder="Filter by group_id" />
+        <input id="groupNameFilter" placeholder="Filter by group name" />
+        <select id="sortByFilter">
+          <option value="newest">Sort: newest</option>
+          <option value="oldest">Sort: oldest</option>
+          <option value="rank">Sort: rank</option>
+          <option value="duplicates">Sort: duplicates</option>
+        </select>
+        <button id="applyFilters">Apply</button>
+        <button id="clearFilters">Clear</button>
+      </div>
     </header>
 
     <section class="table-wrap">
@@ -200,8 +238,18 @@
     const emptyEl = document.getElementById('empty');
     const countEl = document.getElementById('count');
     const updatedEl = document.getElementById('updated');
+    const groupIdFilterEl = document.getElementById('groupIdFilter');
+    const groupNameFilterEl = document.getElementById('groupNameFilter');
+    const sortByFilterEl = document.getElementById('sortByFilter');
+    const applyFiltersEl = document.getElementById('applyFilters');
+    const clearFiltersEl = document.getElementById('clearFilters');
 
     let previousTopId = null;
+    let activeFilters = {
+      group_id: '',
+      group_name: '',
+      sort_by: 'newest',
+    };
 
     function toReadableTime(unixSeconds) {
       const value = Number(unixSeconds);
@@ -253,9 +301,25 @@
       previousTopId = currentTopId;
     }
 
+    function buildQueryParams() {
+      const params = new URLSearchParams();
+      if (activeFilters.group_id) {
+        params.set('group_id', activeFilters.group_id);
+      }
+      if (activeFilters.group_name) {
+        params.set('group_name', activeFilters.group_name);
+      }
+      if (activeFilters.sort_by) {
+        params.set('sort_by', activeFilters.sort_by);
+      }
+      return params.toString();
+    }
+
     async function loadMessages() {
       try {
-        const response = await fetch('/messages', { cache: 'no-store' });
+        const query = buildQueryParams();
+        const endpoint = query ? `/messages?${query}` : '/messages';
+        const response = await fetch(endpoint, { cache: 'no-store' });
         if (!response.ok) {
           throw new Error(`HTTP ${response.status}`);
         }
@@ -269,6 +333,27 @@
         emptyEl.textContent = `Unable to load messages: ${error.message}`;
       }
     }
+
+    applyFiltersEl.addEventListener('click', () => {
+      activeFilters = {
+        group_id: groupIdFilterEl.value.trim(),
+        group_name: groupNameFilterEl.value.trim(),
+        sort_by: sortByFilterEl.value,
+      };
+      loadMessages();
+    });
+
+    clearFiltersEl.addEventListener('click', () => {
+      groupIdFilterEl.value = '';
+      groupNameFilterEl.value = '';
+      sortByFilterEl.value = 'newest';
+      activeFilters = {
+        group_id: '',
+        group_name: '',
+        sort_by: 'newest',
+      };
+      loadMessages();
+    });
 
     loadMessages();
     setInterval(loadMessages, 2000);

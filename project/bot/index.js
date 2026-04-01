@@ -3,6 +3,10 @@ const qrcode = require('qrcode-terminal');
 const axios = require('axios');
 
 const BACKEND_URL = process.env.BACKEND_URL || 'http://127.0.0.1:8000/ingest';
+const BACKEND_REACTIONS_URL = process.env.BACKEND_REACTIONS_URL || 'http://127.0.0.1:8000/reactions/ingest';
+const BACKEND_COMMAND_NEXT_URL = process.env.BACKEND_COMMAND_NEXT_URL || 'http://127.0.0.1:8000/bot/commands/next';
+const BACKEND_COMMAND_RESULT_URL = process.env.BACKEND_COMMAND_RESULT_URL || 'http://127.0.0.1:8000/bot/commands';
+const COMMAND_POLL_INTERVAL_MS = Number.parseInt(process.env.COMMAND_POLL_INTERVAL_MS || '3000', 10);
 const WA_CLIENT_ID = process.env.WA_CLIENT_ID || 'wa-data-bot';
 const MAX_INIT_RETRIES = Number.parseInt(process.env.WA_INIT_RETRIES || '5', 10);
 
@@ -18,6 +22,74 @@ function sleep(ms) {
 function isExecutionContextDestroyed(error) {
   const message = error instanceof Error ? error.message : String(error || '');
   return message.includes('Execution context was destroyed');
+}
+
+function normalizeId(value) {
+  if (!value) {
+    return null;
+  }
+  if (typeof value === 'string') {
+    return value;
+  }
+  if (value._serialized) {
+    return value._serialized;
+  }
+  if (value.id && value.id._serialized) {
+    return value.id._serialized;
+  }
+  if (value.id) {
+    return String(value.id);
+  }
+  return String(value);
+}
+
+function getMessageSerializedId(msg) {
+  if (!msg) {
+    return null;
+  }
+  if (msg.id && msg.id._serialized) {
+    return msg.id._serialized;
+  }
+  return normalizeId(msg.id || msg._serialized || null);
+}
+
+async function reportCommandResult(commandId, payload) {
+  const url = `${BACKEND_COMMAND_RESULT_URL}/${commandId}/result`;
+  await axios.post(url, payload);
+}
+
+async function pollAndExecuteOutboundCommands() {
+  try {
+    const response = await axios.get(BACKEND_COMMAND_NEXT_URL);
+    const data = response.data || {};
+
+    if (data.status !== 'ok' || !data.command) {
+      return;
+    }
+
+    const command = data.command;
+    const commandId = command.id;
+
+    try {
+      const result = await client.sendMessage(command.target_group_id, command.text);
+      await reportCommandResult(commandId, {
+        status: 'sent',
+        wa_message_id: getMessageSerializedId(result),
+        sent_at: Math.floor(Date.now() / 1000),
+      });
+      console.log('Outgoing command sent successfully:', commandId);
+    } catch (error) {
+      await reportCommandResult(commandId, {
+        status: 'failed',
+        error_message: error instanceof Error ? error.message : String(error),
+        sent_at: Math.floor(Date.now() / 1000),
+      });
+      console.error('Failed to execute outgoing command:', commandId, error.message || error);
+    }
+  } catch (error) {
+    const status = error.response ? error.response.status : 'no_response';
+    console.warn('Unable to poll outbound commands:', status, error.message || error);
+  }
 }
 
 const client = new Client({
@@ -39,6 +111,11 @@ client.on('qr', (qr) => {
 
 client.on('ready', () => {
   console.log('WhatsApp client is ready.');
+  setInterval(() => {
+    pollAndExecuteOutboundCommands().catch((error) => {
+      console.error('Command polling loop error:', error.message || error);
+    });
+  }, COMMAND_POLL_INTERVAL_MS);
 });
 
 client.on('auth_failure', (message) => {
@@ -77,6 +154,14 @@ client.on('message', async (msg) => {
     group_id: msg.from,
     group_name: groupName,
     timestamp: msg.timestamp,
+    wa_message_id: getMessageSerializedId(msg),
+    metadata: {
+      type: msg.type || null,
+      has_media: Boolean(msg.hasMedia),
+      from_me: Boolean(msg.fromMe),
+      to: msg.to || null,
+      mentioned_ids: Array.isArray(msg.mentionedIds) ? msg.mentionedIds : [],
+    },
   };
 
   try {
@@ -86,6 +171,38 @@ client.on('message', async (msg) => {
     const status = error.response ? error.response.status : 'no_response';
     const details = error.response ? error.response.data : error.message;
     console.error('API failure while storing message:', { status, details });
+  }
+});
+
+client.on('message_reaction', async (reaction) => {
+  try {
+    const payload = {
+      wa_message_id: normalizeId(reaction.msgId || reaction.id || reaction.parentMsgKey),
+      reactor: normalizeId(reaction.senderId || reaction.author || reaction.actor || 'unknown'),
+      emoji: String(reaction.reaction || reaction.emoji || ''),
+      event_type: reaction.orphan === 1 || reaction.orphan === true ? 'remove' : 'add',
+      group_id: normalizeId(reaction.chatId || (reaction.msgId && reaction.msgId.remote) || null),
+      group_name: null,
+      timestamp: Number.isFinite(reaction.timestamp)
+        ? reaction.timestamp
+        : Math.floor(Date.now() / 1000),
+    };
+
+    if (!payload.wa_message_id || !payload.emoji) {
+      return;
+    }
+
+    await axios.post(BACKEND_REACTIONS_URL, payload);
+    console.log('Reaction ingested:', {
+      wa_message_id: payload.wa_message_id,
+      reactor: payload.reactor,
+      emoji: payload.emoji,
+      event_type: payload.event_type,
+    });
+  } catch (error) {
+    const status = error.response ? error.response.status : 'no_response';
+    const details = error.response ? error.response.data : error.message;
+    console.error('Reaction ingest failure:', { status, details });
   }
 });
 

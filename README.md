@@ -58,6 +58,11 @@ Backend endpoint:
 
 - `POST http://localhost:8000/ingest`
 - `GET http://localhost:8000/messages`
+- `GET http://localhost:8000/messages/merged`
+- `POST http://localhost:8000/bot/send`
+- `GET http://localhost:8000/bot/commands/next`
+- `POST http://localhost:8000/bot/commands/{id}/result`
+- `POST http://localhost:8000/reactions/ingest`
 - `GET http://localhost:8000/` (live message dashboard)
 
 Expected payload:
@@ -72,6 +77,22 @@ Expected payload:
 }
 ```
 
+Enriched payload fields supported:
+
+```json
+{
+	"wa_message_id": "true_12345@g.us_ABCD...",
+	"metadata": {
+		"type": "chat",
+		"has_media": false,
+		"from_me": false,
+		"mentioned_ids": []
+	}
+}
+```
+
+Messages are now enriched on ingest with metadata extraction, dedupe grouping (similarity threshold `>= 0.80` within the same group), and a deterministic `rank_score`.
+
 ### 2. Start Bot
 
 Open a second terminal:
@@ -79,6 +100,16 @@ Open a second terminal:
 ```bash
 cd project/bot
 node index.js
+```
+
+Optional bot environment variables:
+
+```bash
+BACKEND_URL=http://127.0.0.1:8000/ingest
+BACKEND_REACTIONS_URL=http://127.0.0.1:8000/reactions/ingest
+BACKEND_COMMAND_NEXT_URL=http://127.0.0.1:8000/bot/commands/next
+BACKEND_COMMAND_RESULT_URL=http://127.0.0.1:8000/bot/commands
+COMMAND_POLL_INTERVAL_MS=3000
 ```
 
 ### 3. Open the Dashboard
@@ -109,3 +140,15 @@ sqlite3 project/backend/messages.db "SELECT id,text,sender,group_id,timestamp FR
 
 - Bot ingests only group messages (`msg.from.includes('@g.us')`).
 - Stored fields are: `text`, `sender`, `group_id`, `group_name`, `timestamp`.
+- Outbound message sending is queue-based:
+	1. Backend enqueues via `POST /bot/send`.
+	2. Bot polls `GET /bot/commands/next`.
+	3. Bot reports result to `POST /bot/commands/{id}/result`.
+- Reaction events are captured via WhatsApp `message_reaction` and forwarded to `POST /reactions/ingest`.
+- Filter and sorting support for `GET /messages`:
+	- `group_id`
+	- `group_name` (partial match)
+	- `sort_by` in `newest|oldest|rank|duplicates`
+	- `limit`, `offset`
+
+Roadmap TODOs for ranking, searchable index, and aggregation are tracked in `project/backend/TODO_ENRICHMENT.md`.
