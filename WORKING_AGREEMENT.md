@@ -116,3 +116,26 @@ A feature is done when all are true:
   - [x] completed
 - Keep one master TODO index at repository root.
 - Link deeper domain TODO files from the master index.
+
+## 11) Batch Classifier Operating Checklist
+
+Use this checklist for the 2-day Gemini recategorization workflow.
+
+- Default mode is manual trigger (API or script), not cron.
+- Always run a dry-run first for each config change.
+- Use model from env (`GEMINI_BATCH_MODEL`) and keep low-cost defaults unless intentionally changed.
+- Keep `GEMINI_BATCH_ENABLED=true` and set `GEMINI_API_KEY` in `user.env` before runs.
+- Verify preflight with `GET /categories/batch-config` and confirm:
+  - `enabled=true`
+  - `has_api_key=true`
+  - expected model value
+- For manual API execution:
+  - run dry-run with `POST /categories/batch-classify` and `dry_run=true`
+  - run write pass with `dry_run=false` only after dry-run looks correct
+- Track cost by reading response fields:
+  - `estimated_input_tokens`
+  - `estimated_output_tokens`
+  - `estimated_total_tokens`
+  - `pricing.estimated_cost_usd`
+- If `error_batches > 0`, reduce `chunk_size` and rerun dry-run.
+- After write pass, verify classification version distribution in SQLite.
