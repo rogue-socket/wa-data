@@ -9,6 +9,7 @@ const BACKEND_COMMAND_RESULT_URL = process.env.BACKEND_COMMAND_RESULT_URL || 'ht
 const COMMAND_POLL_INTERVAL_MS = Number.parseInt(process.env.COMMAND_POLL_INTERVAL_MS || '3000', 10);
 const WA_CLIENT_ID = process.env.WA_CLIENT_ID || 'wa-data-bot';
 const MAX_INIT_RETRIES = Number.parseInt(process.env.WA_INIT_RETRIES || '5', 10);
+const SSH_SESSION = Boolean(process.env.SSH_CONNECTION || process.env.SSH_TTY);
 
 const NODE_MAJOR = Number.parseInt(process.versions.node.split('.')[0], 10);
 if (NODE_MAJOR >= 25) {
@@ -17,6 +18,14 @@ if (NODE_MAJOR >= 25) {
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function envFlag(name, defaultValue = false) {
+  const raw = process.env[name];
+  if (raw === undefined || raw === null || raw === '') {
+    return defaultValue;
+  }
+  return ['1', 'true', 'yes', 'on'].includes(String(raw).trim().toLowerCase());
 }
 
 function isExecutionContextDestroyed(error) {
@@ -92,17 +101,40 @@ async function pollAndExecuteOutboundCommands() {
   }
 }
 
+const WA_HEADLESS = envFlag('WA_HEADLESS', true);
+const WA_NO_SANDBOX = envFlag('WA_NO_SANDBOX', SSH_SESSION);
+const WA_DISABLE_SETUID_SANDBOX = envFlag('WA_DISABLE_SETUID_SANDBOX', true);
+const WA_DISABLE_DEV_SHM_USAGE = envFlag('WA_DISABLE_DEV_SHM_USAGE', true);
+const WA_DISABLE_GPU = envFlag('WA_DISABLE_GPU', true);
+const WA_CHROME_EXECUTABLE_PATH = process.env.WA_CHROME_EXECUTABLE_PATH || null;
+
+const puppeteerArgs = [];
+if (WA_NO_SANDBOX) {
+  puppeteerArgs.push('--no-sandbox');
+}
+if (WA_DISABLE_SETUID_SANDBOX) {
+  puppeteerArgs.push('--disable-setuid-sandbox');
+}
+if (WA_DISABLE_DEV_SHM_USAGE) {
+  puppeteerArgs.push('--disable-dev-shm-usage');
+}
+if (WA_DISABLE_GPU) {
+  puppeteerArgs.push('--disable-gpu');
+}
+
 const client = new Client({
   authStrategy: new LocalAuth({ clientId: WA_CLIENT_ID }),
   authTimeoutMs: 60000,
   puppeteer: {
-    headless: true,
-    args: [
-      '--disable-setuid-sandbox',
-      '--disable-dev-shm-usage',
-    ],
+    headless: WA_HEADLESS,
+    executablePath: WA_CHROME_EXECUTABLE_PATH || undefined,
+    args: puppeteerArgs,
   },
 });
+
+if (WA_NO_SANDBOX) {
+  console.warn('Chromium sandbox disabled via WA_NO_SANDBOX. Use only on trusted environments.');
+}
 
 client.on('qr', (qr) => {
   qrcode.generate(qr, { small: true });
