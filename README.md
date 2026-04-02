@@ -141,6 +141,12 @@ BACKEND_REACTIONS_URL=http://127.0.0.1:8000/reactions/ingest
 BACKEND_COMMAND_NEXT_URL=http://127.0.0.1:8000/bot/commands/next
 BACKEND_COMMAND_RESULT_URL=http://127.0.0.1:8000/bot/commands
 COMMAND_POLL_INTERVAL_MS=3000
+WA_HEADLESS=true
+WA_NO_SANDBOX=false
+WA_DISABLE_SETUID_SANDBOX=true
+WA_DISABLE_DEV_SHM_USAGE=true
+WA_DISABLE_GPU=true
+WA_CHROME_EXECUTABLE_PATH=
 
 # Optional low-cost Gemini fallback for classification
 ENABLE_GEMINI_CLASSIFIER=false
@@ -167,6 +173,24 @@ You can export variables from `user.env` before running services:
 set -a
 source user.env
 set +a
+```
+
+Linux over SSH sandbox note:
+
+- If bot startup fails with `No usable sandbox`, run with `WA_NO_SANDBOX=true`.
+- This is common on newer Ubuntu/AppArmor configurations where Chromium sandbox prerequisites are blocked.
+- Use this only on trusted machines because disabling sandbox lowers browser isolation.
+
+Example:
+
+```bash
+cd /Users/yashagrawal/Documents/wa-data
+set -a
+source user.env
+set +a
+export WA_NO_SANDBOX=true
+cd project/bot
+node index.js
 ```
 
 ### 3. Open the Dashboard
