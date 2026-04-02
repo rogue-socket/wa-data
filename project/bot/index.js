@@ -9,6 +9,10 @@ const BACKEND_COMMAND_RESULT_URL = process.env.BACKEND_COMMAND_RESULT_URL || 'ht
 const COMMAND_POLL_INTERVAL_MS = Number.parseInt(process.env.COMMAND_POLL_INTERVAL_MS || '3000', 10);
 const WA_CLIENT_ID = process.env.WA_CLIENT_ID || 'wa-data-bot';
 const MAX_INIT_RETRIES = Number.parseInt(process.env.WA_INIT_RETRIES || '5', 10);
+const WA_ALLOWED_GROUP_NAMES = (process.env.WA_ALLOWED_GROUP_NAMES || 'braindump')
+  .split(',')
+  .map((value) => value.trim().toLowerCase())
+  .filter(Boolean);
 const SSH_SESSION = Boolean(process.env.SSH_CONNECTION || process.env.SSH_TTY);
 
 const NODE_MAJOR = Number.parseInt(process.versions.node.split('.')[0], 10);
@@ -50,6 +54,10 @@ function normalizeId(value) {
     return String(value.id);
   }
   return String(value);
+}
+
+function normalizeGroupName(value) {
+  return String(value || '').trim().toLowerCase();
 }
 
 function getMessageSerializedId(msg) {
@@ -178,6 +186,16 @@ client.on('message', async (msg) => {
     }
   } catch (error) {
     console.warn('Unable to resolve group name. Falling back to group_id.', error.message);
+  }
+
+  const normalizedGroupName = normalizeGroupName(groupName);
+  if (WA_ALLOWED_GROUP_NAMES.length > 0 && !WA_ALLOWED_GROUP_NAMES.includes(normalizedGroupName)) {
+    console.log('Skipping message from non-allowed group:', {
+      group_id: msg.from,
+      group_name: groupName,
+      allowed_groups: WA_ALLOWED_GROUP_NAMES,
+    });
+    return;
   }
 
   const payload = {

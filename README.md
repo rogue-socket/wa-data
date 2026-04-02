@@ -141,6 +141,7 @@ BACKEND_REACTIONS_URL=http://127.0.0.1:8000/reactions/ingest
 BACKEND_COMMAND_NEXT_URL=http://127.0.0.1:8000/bot/commands/next
 BACKEND_COMMAND_RESULT_URL=http://127.0.0.1:8000/bot/commands
 COMMAND_POLL_INTERVAL_MS=3000
+WA_ALLOWED_GROUP_NAMES=braindump
 WA_HEADLESS=true
 WA_NO_SANDBOX=false
 WA_DISABLE_SETUID_SANDBOX=true
@@ -192,6 +193,13 @@ export WA_NO_SANDBOX=true
 cd project/bot
 node index.js
 ```
+
+Group filter note:
+
+- Bot forwards/stores messages only from groups listed in `WA_ALLOWED_GROUP_NAMES`.
+- Default is `braindump`.
+- For multiple groups, use comma-separated names (case-insensitive), for example:
+	`WA_ALLOWED_GROUP_NAMES=braindump,founders-circle`
 
 ### 3. Open the Dashboard
 
