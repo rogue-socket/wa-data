@@ -237,34 +237,55 @@ sqlite3 project/backend/messages.db "SELECT id,text,sender,group_id,timestamp FR
 
 ## 2-Day Gemini Batch Re-Classifier
 
-For consistent category refresh with low cost, run a batch recategorization every 2 days.
+Use this for low-cost recategorization every 2 days. Default operating mode is manual trigger (no cron required).
 
 Classifier spec files:
 
 - `project/backend/classifier/taxonomy.jsonl` (compact taxonomy with short category codes)
 - `project/backend/classifier/prompt_skeleton.txt` (strict JSON output prompt skeleton)
 
-Run manually:
+### Quick Runbook (No Cron)
+
+1. Start backend:
 
 ```bash
 cd project/backend
-set -a
-source ../../user.env
-set +a
-conda run -n wa-data python -m app.batch_classifier --days 2 --limit 1200 --chunk-size 30
+conda run -n wa-data uvicorn app.main:app --reload
 ```
 
-Dry-run (no DB writes):
+2. Ensure required keys exist in `user.env`:
 
 ```bash
-cd project/backend
-set -a
-source ../../user.env
-set +a
-conda run -n wa-data python -m app.batch_classifier --days 2 --limit 1200 --chunk-size 30 --dry-run
+GEMINI_API_KEY=<your_key_here>
+GEMINI_BATCH_ENABLED=true
+GEMINI_BATCH_DAYS=2
+GEMINI_BATCH_LIMIT=1200
+GEMINI_BATCH_CHUNK_SIZE=30
+GEMINI_BATCH_MODEL=gemini-2.0-flash-lite
 ```
 
-Run from API (manual trigger, no cron needed):
+3. Export environment in a new terminal:
+
+```bash
+cd /Users/yashagrawal/Documents/wa-data
+set -a
+source user.env
+set +a
+```
+
+4. Preflight check (confirm API key loaded and config is visible):
+
+```bash
+curl -s http://127.0.0.1:8000/categories/batch-config
+```
+
+Expected fields:
+
+- `enabled: true`
+- `has_api_key: true`
+- `model: gemini-2.0-flash-lite` (or your override)
+
+5. Run dry-run first (recommended):
 
 ```bash
 curl -X POST http://127.0.0.1:8000/categories/batch-classify \
@@ -278,15 +299,87 @@ curl -X POST http://127.0.0.1:8000/categories/batch-classify \
 	}'
 ```
 
-The response includes token estimates and an optional USD estimate if pricing env keys are set.
+Dry-run success criteria:
 
-Cron setup example (every 2 days):
+- `status` is `ok`
+- `dry_run` is `true`
+- `error_batches` is `0` (or very low)
+- `estimated_total_tokens` is reasonable for your budget
+
+6. Run real classification (writes to DB):
 
 ```bash
-crontab -e
+curl -X POST http://127.0.0.1:8000/categories/batch-classify \
+	-H "Content-Type: application/json" \
+	-d '{
+		"days": 2,
+		"limit": 1200,
+		"chunk_size": 30,
+		"dry_run": false,
+		"only_with_urls": true
+	}'
 ```
 
-Add this line:
+7. Verify writes:
+
+```bash
+sqlite3 project/backend/messages.db "SELECT category_version, COUNT(*) FROM messages GROUP BY category_version ORDER BY COUNT(*) DESC;"
+```
+
+### CLI Runner (Alternative to API)
+
+Dry-run:
+
+```bash
+cd project/backend
+set -a
+source ../../user.env
+set +a
+./scripts/run_batch_classifier.sh --days 2 --limit 200 --chunk-size 25 --dry-run
+```
+
+Real run:
+
+```bash
+cd project/backend
+set -a
+source ../../user.env
+set +a
+./scripts/run_batch_classifier.sh --days 2 --limit 1200 --chunk-size 30
+```
+
+### Token and Cost Fields
+
+Batch responses include:
+
+- `estimated_input_tokens`
+- `estimated_output_tokens`
+- `estimated_total_tokens`
+- `pricing.estimated_cost_usd`
+
+To enable a meaningful USD estimate, set these in `user.env`:
+
+```bash
+GEMINI_BATCH_INPUT_COST_PER_MTOKENS_USD=<input_price_per_1M_tokens>
+GEMINI_BATCH_OUTPUT_COST_PER_MTOKENS_USD=<output_price_per_1M_tokens>
+```
+
+### Common Errors and Fixes
+
+- `batch classifier is disabled`:
+	Set `GEMINI_BATCH_ENABLED=true` in `user.env`, re-export env, retry.
+- `GEMINI_API_KEY is required` or `has_api_key: false`:
+	Add key to `user.env`, re-export env, retry.
+- `taxonomy file missing` or `prompt skeleton missing`:
+	Verify these files exist:
+	`project/backend/classifier/taxonomy.jsonl`
+	`project/backend/classifier/prompt_skeleton.txt`
+- non-zero `error_batches`:
+	Retry with smaller `chunk_size` (for example 15 to 20) and lower `limit`.
+
+### Optional Cron Example
+
+Only enable this when you want automation later.
 
 ```cron
 10 2 */2 * * cd /Users/yashagrawal/Documents/wa-data/project/backend && /Users/yashagrawal/Documents/wa-data/project/backend/scripts/run_batch_classifier.sh --days 2 --limit 1200 --chunk-size 30 >> /Users/yashagrawal/Documents/wa-data/project/backend/batch_classifier.log 2>&1
@@ -295,9 +388,7 @@ Add this line:
 Notes:
 
 - `*/2` on day-of-month runs roughly 3 to 4 times per week.
-- Keep model at `gemini-2.0-flash-lite` for cheapest routine classification.
-- Batch job prints token estimates (`estimated_input_tokens`, `estimated_output_tokens`, `estimated_total_tokens`) for budget tracking.
-- Low-token strategy: compact taxonomy codes, truncated message text, URL cap, strict JSON schema, temperature 0.
+- Low-token strategy here is fixed: compact taxonomy codes, truncated message text, URL cap, strict JSON schema, temperature 0.
 
 Roadmap TODOs for ranking, searchable index, and aggregation are tracked in `project/backend/TODO_ENRICHMENT.md`.
 
